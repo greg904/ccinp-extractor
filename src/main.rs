@@ -1,62 +1,51 @@
 use std::str;
 
-use lopdf::{Document, Object, content::Operation};
+use pdf::build::{CatalogBuilder, PageBuilder};
+use pdf::content::{Op, TextDrawAdjusted};
+use pdf::file::File;
+use pdf::primitive::Primitive;
 
-fn match_string_object(obj: &Object, expected: &str) -> bool {
-    match obj {
-        Object::String(s, _format) => expected.bytes().eq(s.iter().cloned()),
-        _ => false,
-    }
-}
-
-fn read_exercise_number_from_operation(op: &Operation) -> Option<i32> {
-    if op.operator != "TJ" || op.operands.len() < 1 {
-        return None;
-    }
-    let text = match &op.operands[0] {
-        Object::Array(arr) => arr,
+fn read_exercise_number_from_op(op: &Op) -> Option<i32> {
+    let text = match op {
+        Op::TextDrawAdjusted { array } => array,
         _ => return None,
     };
-    if text.len() < 5 ||
-        !match_string_object(&text[0], "EXER") ||
-        !match_string_object(&text[2], "CICE") {
+    if text.len() < 5 {
         return None;
     }
+    match &text[0] {
+        TextDrawAdjusted::Text(s) if s.as_ref() == b"EXER" => {},
+        _ => return None,
+    };
+    match &text[2] {
+        TextDrawAdjusted::Text(s) if s.as_ref() == b"CICE" => {},
+        _ => return None,
+    };
     match &text[4] {
-        Object::String(s, _format) =>
-            str::from_utf8(s).ok()?.parse().ok(),
+        TextDrawAdjusted::Text(s) => s.to_string().ok()?.parse().ok(),
         _ => None,
     }
 }
 
 fn main() {
-    let mut doc = Document::load("exercises.pdf").expect("failed to load PDF");
+    let mut file = File::open("exercises.pdf").expect("failed to load PDF");
     let mut current_exercise_number = -1;
-    for (_page_number, page_id) in doc.get_pages() {
-        let content = doc.get_and_decode_page_content(page_id).expect("failed to decode page content");
-        match content.operations.iter().find_map(read_exercise_number_from_operation) {
-            Some(val) => current_exercise_number = val,
-            None => {},
-        }
-        if current_exercise_number != 105 {
-            if let Some(page) = doc.get_object(page_id).ok() {
-                let mut page_tree_ref = page
-                    .as_dict()
-                    .and_then(|dict| dict.get(b"Parent"))
-                    .and_then(Object::as_reference);
-                while let Ok(page_tree_id) = page_tree_ref {
-                    if let Some(page_tree) = doc.get_object_mut(page_tree_id).ok().and_then(|pt| pt.as_dict_mut().ok()) {
-                        if let Ok(count) = page_tree.get(b"Count").and_then(Object::as_i64) {
-                            page_tree.set("Count", count - 1);
-                        }
-                        page_tree_ref = page_tree.get(b"Parent").and_then(Object::as_reference);
-                    } else {
-                        break;
-                    }
-                }
+    let mut pages = vec![];
+    for page in file.pages() {
+        let page = page.expect("failed to decode page");
+        if let Some(contents) = &page.contents {
+            let ops = contents.operations(&file).unwrap();
+            match ops.iter().find_map(read_exercise_number_from_op) {
+                Some(val) => current_exercise_number = val,
+                None => {},
             }
-            doc.delete_object(page_id);
+        }
+        if current_exercise_number == 105 {
+            pages.push(PageBuilder::from_page(&page).unwrap());
         }
     }
-    doc.save("exercises-extracted.pdf").expect("failed to save PDF");
+    let catalog = CatalogBuilder::from_pages(pages)
+        .build(&mut file).unwrap();
+    file.update_catalog(catalog).expect("failed to update catalog");
+    file.save_to("exercises-extracted.pdf").expect("failed to save PDF");
 }

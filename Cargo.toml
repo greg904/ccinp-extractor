@@ -3,7 +3,6 @@ name = "ccinp-extractor"
 version = "0.1.0"
 edition = "2018"
 
-[dependencies.lopdf]
-version = "0.27.0"
-# Use the faster PDF parser.
-features = ["nom_parser"]
+[dependencies.pdf]
+git = "https://github.com/pdf-rs/pdf.git"
+rev = "3e039d9d62b654681170e8e0d46bbacc9e2877c4"
