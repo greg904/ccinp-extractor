@@ -1,0 +1,9 @@
+[package]
+name = "ccinp-extractor"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies.lopdf]
+version = "0.27.0"
+# Use the faster PDF parser.
+features = ["nom_parser"]
