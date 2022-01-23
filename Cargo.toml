@@ -3,6 +3,5 @@ name = "ccinp-extractor"
 version = "0.1.0"
 edition = "2018"
 
-[dependencies.pdf]
-git = "https://github.com/pdf-rs/pdf.git"
-rev = "3e039d9d62b654681170e8e0d46bbacc9e2877c4"
+[dependencies]
+mupdf = "0.3.0"
