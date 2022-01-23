@@ -5,7 +5,7 @@ edition = "2018"
 
 [dependencies.mupdf]
 version = "0.3.0"
-default-features = true
+default-features = false
 
 [dependencies.clap]
 version = "3.0.10"

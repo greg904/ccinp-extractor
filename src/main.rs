@@ -22,7 +22,7 @@ enum FilterAction {
     Subtree { subtract_count: i32 },
 }
 
-fn filter_page_tree_helper<F: FnMut(PdfObject) -> bool>(
+fn filter_page_tree_helper<F: FnMut(&PdfObject) -> bool>(
     mut node: PdfObject,
     f: &mut F,
 ) -> Result<FilterAction, mupdf::Error> {
@@ -36,7 +36,7 @@ fn filter_page_tree_helper<F: FnMut(PdfObject) -> bool>(
         None => return Ok(FilterAction::Subtree { subtract_count: 0 }),
     };
     match &*ty {
-        b"Page" => Ok(if f(node) {
+        b"Page" => Ok(if f(&node) {
             FilterAction::KeepKid
         } else {
             FilterAction::RemoveKid
@@ -72,7 +72,7 @@ fn filter_page_tree_helper<F: FnMut(PdfObject) -> bool>(
     }
 }
 
-fn filter_page_tree<F: FnMut(PdfObject) -> bool>(
+fn filter_page_tree<F: FnMut(&PdfObject) -> bool>(
     root: PdfObject,
     mut f: F,
 ) -> Result<(), mupdf::Error> {
@@ -93,6 +93,37 @@ pub enum ExtractError {
 impl<'a> ExerciseExtractor<'a> {
     pub fn new(doc_bytes: &'a [u8]) -> Self {
         Self { doc_bytes }
+    }
+
+    fn read_exercise_number(page: &PdfObject) -> Option<i32> {
+        let contents = match page.get_dict("Contents").ok().flatten() {
+            Some(val) => val,
+            None => return None,
+        };
+        let stream = match contents.read_stream() {
+            Ok(val) => val,
+            Err(_) => return None,
+        };
+        let stream_str = match str::from_utf8(&stream) {
+            Ok(val) => val,
+            Err(_) => return None,
+        };
+        let markers = ["(EXER)31(CICE)", "(Exercice)"];
+        for marker in markers.iter() {
+            if let Some(i) = stream_str.find(marker) {
+                if let Some(l_paren) = stream_str[i + marker.len()..].find('(') {
+                    let l_paren = (i + marker.len()) + l_paren;
+                    if let Some(r_paren) = stream_str[(l_paren + 1)..].find(')') {
+                        let r_paren = (l_paren + 1) + r_paren;
+                        match stream_str[(l_paren + 1)..r_paren].parse() {
+                            Ok(val) => return Some(val),
+                            Err(_) => {},
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub fn extract<W: Write>(
@@ -116,37 +147,13 @@ impl<'a> ExerciseExtractor<'a> {
             .ok_or(ExtractError::InvalidDoc)?;
         let mut current_exercise_number: i32 = -1;
         let mut not_seen = exercise_numbers.to_vec();
-        filter_page_tree(tree, |page: PdfObject| {
-            let contents = match page.get_dict("Contents").ok().flatten() {
-                Some(val) => val,
-                None => return true,
-            };
-            let stream = match contents.read_stream() {
-                Ok(val) => val,
-                Err(_) => return true,
-            };
-            let stream_str = match str::from_utf8(&stream) {
-                Ok(val) => val,
-                Err(_) => return true,
-            };
-            let marker = "(EXER)31(CICE)";
-            if let Some(i) = stream_str.find(marker) {
-                if let Some(l_paren) = stream_str[i + marker.len()..].find('(') {
-                    let l_paren = (i + marker.len()) + l_paren;
-                    if let Some(r_paren) = stream_str[(l_paren + 1)..].find(')') {
-                        let r_paren = (l_paren + 1) + r_paren;
-                        match stream_str[(l_paren + 1)..r_paren].parse() {
-                            Ok(val) => {
-                                current_exercise_number = val;
-                                if let Some(pos) =
-                                    not_seen.iter().position(|n| *n == current_exercise_number)
-                                {
-                                    not_seen.swap_remove(pos);
-                                }
-                            }
-                            Err(_) => {}
-                        }
-                    }
+        filter_page_tree(tree, |page: &PdfObject| {
+            if let Some(n) = Self::read_exercise_number(page) {
+                current_exercise_number = n;
+                if let Some(pos) =
+                    not_seen.iter().position(|it| *it == n)
+                {
+                    not_seen.swap_remove(pos);
                 }
             }
             exercise_numbers.contains(&current_exercise_number)
