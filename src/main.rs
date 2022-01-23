@@ -3,8 +3,11 @@ use std::convert::Infallible;
 use std::convert::TryFrom;
 use std::hash::Hash;
 use std::io::Write;
+use std::net::SocketAddr;
 use std::str;
 use std::sync::{Arc, Mutex};
+
+use clap::Parser;
 
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{http, StatusCode};
@@ -185,8 +188,20 @@ fn internal_server_error() -> http::Result<http::Response<Body>> {
 
 const EXERCISES_DOCUMENT: &[u8; 966410] = include_bytes!("exercises.pdf");
 
+/// An HTTP server that serves parts of the CCINP exercise document
+#[derive(Parser)]
+#[clap()]
+struct Args {
+    /// The address to bind to
+    #[clap(short, long, default_value = "127.0.0.1:3000")]
+    addr: String,
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let args = Args::parse();
+    let addr: SocketAddr = args.addr.parse()?;
+
     let exercise_extractor = Arc::new(Mutex::new(ExerciseExtractor::new(EXERCISES_DOCUMENT)));
 
     // For every connection, we must make a `Service` to handle all
@@ -235,8 +250,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }))
         }
     });
-
-    let addr = ([127, 0, 0, 1], 3000).into();
 
     let server = Server::bind(&addr).serve(make_svc);
 

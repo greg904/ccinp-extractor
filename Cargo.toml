@@ -3,8 +3,13 @@ name = "ccinp-extractor"
 version = "0.1.0"
 edition = "2018"
 
-[dependencies]
-mupdf = "0.3.0"
+[dependencies.mupdf]
+version = "0.3.0"
+default-features = true
+
+[dependencies.clap]
+version = "3.0.10"
+features = ["derive"]
 
 [dependencies.hyper]
 version = "0.14"
